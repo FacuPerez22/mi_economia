@@ -88,9 +88,9 @@ with tab_tablero:
         gastos_totales = gastos["monto"].sum() if not gastos.empty else 0
         ahorro = ingresos - gastos_totales
 
-        st.metric("Ingresos totales", f"${ingresos:,.0f}")
-        st.metric("Gastos totales", f"${gastos_totales:,.0f}")
-        st.metric("Poder de ahorro", f"${ahorro:,.0f}")
+        st.metric("Ingresos totales", f"${ingresos:.0f}")
+        st.metric("Gastos totales", f"${gastos_totales:.0f}")
+        st.metric("Poder de ahorro", f"${ahorro:.0f}")
 
     with col2:
         st.subheader("🚗 Eficiencia del auto")
