@@ -1,0 +1,58 @@
+Comience
+Detalles de conexión
+Conexión segura
+Agregar datos
+SERVICIO
+
+MySQL 8.4.8
+DigitalOcean
+Estados Unidos, California - DigitalOcean: San Francisco
+ESTADO DE DESPLIEGUE
+Nodos
+1
+Edificio
+
+Ir a la descripción general del servicio
+Detalles de conexión
+Herramientas para desarrolladores
+Puedes conectarte y administrar tus servicios de Aiven mediante programación utilizando la interfaz de línea de comandos (CLI) de Aiven, la API, el proveedor de Terraform o el operador de Kubernetes.
+Documentación de la interfaz de línea de comandos de Aiven
+Documentación de la API
+Documentación del proveedor Aiven Terraform
+Conecta con:
+General
+
+ 
+
+URI del servicio
+mysql://
+HAZ CLIC PARA: REVELAR LA CONTRASEÑA
+@mysql-1873ba80-mieconomia.d.aivencloud.com:18497/defaultdb?ssl-mode=REQUIRED
+
+Nombre de la base de datos
+base de datos predeterminada
+
+Anfitrión
+mysql-1873ba80-mieconomia.d.aivencloud.com
+
+Puerto
+18497
+
+Usuario
+avnadmin
+
+Contraseña
+AVNS_W5LPVjkfixkJiUlMxLR
+
+
+
+modo SSL
+REQUERIDO
+
+Certificado CA
+
+Espectáculo
+
+.venv/
+.streamlit/secrets.toml
+__pycache__/
