@@ -3,7 +3,46 @@ import datetime
 import db
 
 st.set_page_config(page_title="Mi Economía", layout="wide")
-st.title("🚕 Mi Economía - Control Taxi del FACU 4722")
+
+# ---------------------------------------------------
+# LOGIN
+# ---------------------------------------------------
+if "usuario_id" not in st.session_state:
+    st.session_state.usuario_id = None
+    st.session_state.usuario_nombre = None
+
+if st.session_state.usuario_id is None:
+    st.title("🚕 Mi Economía - Iniciar sesión")
+
+    with st.form("form_login"):
+        usuario_input = st.text_input("Usuario")
+        password_input = st.text_input("Contraseña", type="password")
+        entrar = st.form_submit_button("Ingresar")
+
+        if entrar:
+            usuario_id = db.verificar_login(usuario_input, password_input)
+            if usuario_id is not None:
+                st.session_state.usuario_id = usuario_id
+                st.session_state.usuario_nombre = usuario_input
+                st.rerun()
+            else:
+                st.error("Usuario o contraseña incorrectos ❌")
+
+    st.stop()  # No sigue mostrando el resto de la app hasta loguearse
+
+# ---------------------------------------------------
+# A PARTIR DE ACÁ, YA ESTÁ LOGUEADO
+# ---------------------------------------------------
+usuario_id = st.session_state.usuario_id
+
+col_titulo, col_logout = st.columns([5, 1])
+with col_titulo:
+    st.title(f"🚕 Mi Economía - {st.session_state.usuario_nombre}")
+with col_logout:
+    if st.button("Cerrar sesión"):
+        st.session_state.usuario_id = None
+        st.session_state.usuario_nombre = None
+        st.rerun()
 
 tab_tablero, tab_gasto, tab_turno, tab_cierre = st.tabs([
     "📊 Tablero", "💸 Cargar Gasto", "🚗 Cargar Turno", "📅 Cierre Mensual"
@@ -26,7 +65,7 @@ with tab_gasto:
         enviado = st.form_submit_button("Guardar gasto")
         if enviado:
             categoria_id = next(id_cat for id_cat, nombre in categorias if nombre == categoria_nombre)
-            db.guardar_gasto(fecha, categoria_id, monto, descripcion, metodo_pago)
+            db.guardar_gasto(fecha, categoria_id, monto, descripcion, metodo_pago, usuario_id)
             st.success(f"¡Gasto de ${monto} en '{categoria_nombre}' guardado! ✅")
 
     st.divider()
@@ -52,7 +91,7 @@ with tab_turno:
 
         enviado = st.form_submit_button("Guardar turno")
         if enviado:
-            db.guardar_turno_diario(fecha, recaudacion_reloj, recaudacion_apps, gasto_gnc, gasto_nafta)
+            db.guardar_turno_diario(fecha, recaudacion_reloj, recaudacion_apps, gasto_gnc, gasto_nafta, usuario_id)
             diferencia = recaudacion_reloj - recaudacion_apps
             st.success(f"¡Turno guardado! Recaudación pura de calle: ${diferencia:.2f} ✅")
 
@@ -69,16 +108,16 @@ with tab_cierre:
 
         enviado = st.form_submit_button("Guardar cierre")
         if enviado:
-            db.guardar_cierre_mensual(mes_anio, km_totales, km_ocupados, fichas_totales, cantidad_viajes)
+            db.guardar_cierre_mensual(mes_anio, km_totales, km_ocupados, fichas_totales, cantidad_viajes, usuario_id)
             st.success(f"¡Cierre de {mes_anio} guardado! ✅")
 
 # ---------------------------------------------------
 with tab_tablero:
     st.header("Tu tablero")
 
-    gastos = db.obtener_gastos()
-    turnos = db.obtener_turnos()
-    cierres = db.obtener_cierres()
+    gastos = db.obtener_gastos(usuario_id)
+    turnos = db.obtener_turnos(usuario_id)
+    cierres = db.obtener_cierres(usuario_id)
 
     col1, col2 = st.columns(2)
 
@@ -110,6 +149,4 @@ with tab_tablero:
 
     st.subheader("📋 Últimos turnos cargados")
     st.dataframe(turnos, use_container_width=True)
-
-    #streamlit run app.py --server.address=0.0.0.0
-    
+    #streamlit run app.py
