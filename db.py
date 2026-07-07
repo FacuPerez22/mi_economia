@@ -27,13 +27,13 @@ def verificar_login(nombre_usuario, password_ingresada):
     conexion.close()
 
     if fila is None:
-        return None  # usuario no existe
+        return None
 
     usuario_id, hash_guardado = fila
     if bcrypt.checkpw(password_ingresada.encode(), hash_guardado.encode()):
-        return usuario_id  # login correcto
+        return usuario_id
     else:
-        return None  # contraseña incorrecta
+        return None
 
 # ---- GUARDAR ----
 
@@ -49,14 +49,15 @@ def guardar_gasto(fecha, categoria_id, monto, descripcion, metodo_pago, usuario_
     cursor.close()
     conexion.close()
 
-def guardar_turno_diario(fecha, recaudacion_reloj, recaudacion_apps, gasto_gnc, gasto_nafta, usuario_id):
+def guardar_turno_diario(fecha, recaudacion_reloj, reloj_uber, uber_pago, reloj_cabify, cabify_pago, gasto_gnc, gasto_nafta, usuario_id):
     conexion = conectar()
     cursor = conexion.cursor()
     query = """
-        INSERT INTO turnos_diarios (fecha, recaudacion_reloj, recaudacion_apps, gasto_gnc, gasto_nafta, usuario_id)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO turnos_diarios 
+        (fecha, recaudacion_reloj, reloj_uber, uber_pago, reloj_cabify, cabify_pago, gasto_gnc, gasto_nafta, usuario_id)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
-    cursor.execute(query, (fecha, recaudacion_reloj, recaudacion_apps, gasto_gnc, gasto_nafta, usuario_id))
+    cursor.execute(query, (fecha, recaudacion_reloj, reloj_uber, uber_pago, reloj_cabify, cabify_pago, gasto_gnc, gasto_nafta, usuario_id))
     conexion.commit()
     cursor.close()
     conexion.close()
@@ -111,7 +112,12 @@ def obtener_gastos(usuario_id):
 def obtener_turnos(usuario_id):
     conexion = conectar()
     cursor = conexion.cursor()
-    cursor.execute("SELECT * FROM turnos_diarios WHERE usuario_id = %s ORDER BY fecha DESC", (usuario_id,))
+    cursor.execute("""
+        SELECT fecha, recaudacion_reloj, reloj_uber, uber_pago, reloj_cabify, cabify_pago, gasto_gnc, gasto_nafta
+        FROM turnos_diarios 
+        WHERE usuario_id = %s 
+        ORDER BY fecha DESC
+    """, (usuario_id,))
     filas = cursor.fetchall()
     columnas = [col[0] for col in cursor.description]
     cursor.close()
