@@ -168,8 +168,6 @@ with tab_turno:
                 usuario_id
             )
 
-            # Comisión: se descuenta primero la parte que ya cobraste en efectivo
-            # (esa todavía no tuvo comisión aplicada, se la van a descontar después)
             comision_uber = (reloj_uber - uber_efectivo) - uber_transferido
             comision_cabify = (reloj_cabify - cabify_efectivo) - cabify_transferido
 
@@ -269,7 +267,6 @@ with tab_tablero:
         if not gastos.empty:
             gastos["fecha"] = pd.to_datetime(gastos["fecha"]).dt.date
 
-        # Si hay saldo inicial configurado, solo miramos movimientos desde esa fecha
         if saldo:
             fecha_desde = saldo["fecha_inicio"]
             turnos_periodo = turnos[turnos["fecha"] >= fecha_desde] if not turnos.empty else turnos
@@ -290,7 +287,6 @@ with tab_tablero:
             efectivo_movimiento = transferencia_movimiento = recaudacion_bruta = gastos_turnos = 0
             comision_uber_total = comision_cabify_total = 0
 
-        # Los gastos de vida salen del efectivo o del banco según el método de pago cargado
         if not gastos_periodo.empty:
             gastos_vida_efectivo = gastos_periodo.loc[gastos_periodo["metodo_pago"] == "Efectivo", "monto"].sum()
             gastos_vida_tarjeta = gastos_periodo.loc[gastos_periodo["metodo_pago"] == "Tarjeta", "monto"].sum()
