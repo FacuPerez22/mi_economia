@@ -91,61 +91,46 @@ with tab_gasto:
 with tab_turno:
     st.header("Cargar el turno de hoy")
 
-    st.info(
-        "💡 En Uber/Cabify cargá el **reloj** (lo que marcó el viaje) y lo que **te pagaron**: "
-        "la app calcula sola la comisión (reloj − pagado). El campo de efectivo es solo para "
-        "esos días raros que te pagan cash — dejalo en 0 si no aplica."
-    )
-
     with st.form("form_turno", clear_on_submit=True):
         fecha = st.date_input("Fecha", value=datetime.date.today(), key="fecha_turno")
-        recaudacion_reloj = st.number_input(
-            "Recaudación TOTAL del reloj ($) — informativo",
-            min_value=0, step=100, format="%d", value=None
-        )
 
-        st.markdown("**🛣️ Kilómetros del día** (opcional, para medir eficiencia)")
+        st.markdown("**Kilometros del dia** (opcional, para medir eficiencia)")
         col_km1, col_km2 = st.columns(2)
         with col_km1:
             km_recorridos = st.number_input("KM totales recorridos hoy", min_value=0.0, step=1.0, value=None)
         with col_km2:
             km_ocupados = st.number_input("KM con pasajero (ocupado)", min_value=0.0, step=1.0, value=None)
 
-        st.markdown("**🚖 Viajes de calle** (parados en la calle, no por app)")
+        st.markdown("**Viajes de calle** (parados en la calle, no por app)")
+        st.caption("Poné el total que marca el reloj y cuanto de eso fue transferencia. El efectivo se calcula solo, restando.")
         col_cal1, col_cal2 = st.columns(2)
         with col_cal1:
-            efectivo_calle = st.number_input("Cobrado en efectivo ($)", min_value=0, step=100, format="%d", value=None, key="ec")
+            total_calle = st.number_input("Total facturado (reloj) en viajes de calle ($)", min_value=0, step=100, format="%d", value=None)
         with col_cal2:
-            transferencia_calle = st.number_input("Cobrado por transferencia ($)", min_value=0, step=100, format="%d", value=None, key="tc")
+            transferencia_calle = st.number_input("De eso, cuanto fue transferencia ($)", min_value=0, step=100, format="%d", value=None)
 
-        st.markdown("**🟢 Uber**")
+        st.markdown("**Uber**")
         reloj_uber = st.number_input("Reloj - parte Uber ($)", min_value=0, step=100, format="%d", value=None)
-        uber_transferido = st.number_input("Uber me pagó ($)", min_value=0, step=100, format="%d", value=None)
-        uber_efectivo = st.number_input("Cobrado en efectivo por viajes Uber ($) — poco frecuente", min_value=0, step=100, format="%d", value=None)
+        uber_transferido = st.number_input("Uber me pago ($)", min_value=0, step=100, format="%d", value=None)
+        with st.expander("Te pagaron algo en efectivo por Uber hoy? (poco frecuente)"):
+            uber_efectivo = st.number_input("Cobrado en efectivo por viajes Uber ($)", min_value=0, step=100, format="%d", value=None)
 
-        st.markdown("**🟣 Cabify**")
+        st.markdown("**Cabify**")
         reloj_cabify = st.number_input("Reloj - parte Cabify ($)", min_value=0, step=100, format="%d", value=None)
-        cabify_transferido = st.number_input("Cabify me pagó ($)", min_value=0, step=100, format="%d", value=None)
-        cabify_efectivo = st.number_input("Cobrado en efectivo por viajes Cabify ($) — poco frecuente", min_value=0, step=100, format="%d", value=None)
+        cabify_transferido = st.number_input("Cabify me pago ($)", min_value=0, step=100, format="%d", value=None)
+        with st.expander("Te pagaron algo en efectivo por Cabify hoy? (poco frecuente)"):
+            cabify_efectivo = st.number_input("Cobrado en efectivo por viajes Cabify ($)", min_value=0, step=100, format="%d", value=None)
 
-        st.markdown("**Gastos fijos del día**")
+        st.markdown("**Gastos fijos del dia**")
         gasto_gnc = st.number_input("Gasto en GNC ($)", min_value=0, step=100, format="%d", value=None)
         gasto_nafta = st.number_input("Gasto en Nafta ($)", min_value=0, step=100, format="%d", value=None)
         gasto_comida_laboral = st.number_input("Comida laboral ($)", min_value=0, step=100, format="%d", value=None)
 
-        st.markdown("**🔎 Arqueo (opcional)**")
-        efectivo_contado_real = st.number_input(
-            "Efectivo que contaste en el bolsillo al cerrar el turno ($)",
-            min_value=0, step=100, format="%d", value=None,
-            help="Dejalo en 0 si no querés hacer arqueo hoy. Si lo cargás, te muestro la diferencia contra lo que calculó la app."
-        )
-
         enviado = st.form_submit_button("Guardar turno")
         if enviado:
-            recaudacion_reloj = recaudacion_reloj or 0
+            total_calle = total_calle or 0
             km_recorridos = km_recorridos or 0
             km_ocupados = km_ocupados or 0
-            efectivo_calle = efectivo_calle or 0
             transferencia_calle = transferencia_calle or 0
             reloj_uber = reloj_uber or 0
             uber_transferido = uber_transferido or 0
@@ -153,10 +138,20 @@ with tab_turno:
             reloj_cabify = reloj_cabify or 0
             cabify_transferido = cabify_transferido or 0
             cabify_efectivo = cabify_efectivo or 0
-            efectivo_contado_real = efectivo_contado_real or 0
             gasto_gnc = gasto_gnc or 0
             gasto_nafta = gasto_nafta or 0
             gasto_comida_laboral = gasto_comida_laboral or 0
+            efectivo_contado_real = 0
+
+            if transferencia_calle > total_calle:
+                st.error(
+                    f"La transferencia (${transferencia_calle:,.0f}) es mayor que el total facturado "
+                    f"(${total_calle:,.0f}). Revisa esos dos numeros, no se guardo el turno."
+                )
+                st.stop()
+
+            efectivo_calle = total_calle - transferencia_calle
+            recaudacion_reloj = total_calle + reloj_uber + reloj_cabify
 
             db.guardar_turno_diario(
                 fecha, recaudacion_reloj, km_recorridos, km_ocupados,
@@ -176,28 +171,19 @@ with tab_turno:
             gastos_del_dia = gasto_gnc + gasto_nafta + gasto_comida_laboral
             neto_del_dia = efectivo_del_dia + transferencia_del_dia - gastos_del_dia
 
-            st.success("¡Turno guardado! ✅")
-            st.info(f"💵 Efectivo del día: {formato_pesos(efectivo_del_dia)} | 🏦 Transferencias del día: {formato_pesos(transferencia_del_dia)}")
+            st.success("Turno guardado!")
+            st.info(f"Efectivo de calle calculado: {formato_pesos(efectivo_calle)} (de ${total_calle:,.0f} facturados)".replace(",", "."))
+            st.info(f"Efectivo del dia: {formato_pesos(efectivo_del_dia)} | Transferencias del dia: {formato_pesos(transferencia_del_dia)}")
             if reloj_uber > 0:
-                st.info(f"🟢 Comisión Uber del día: {formato_pesos(comision_uber)}")
+                st.info(f"Comision Uber del dia: {formato_pesos(comision_uber)}")
             if reloj_cabify > 0:
-                st.info(f"🟣 Comisión Cabify del día: {formato_pesos(comision_cabify)}")
-            st.info(f"💰 Neto real del día (efectivo + transferencias - gastos): {formato_pesos(neto_del_dia)}")
+                st.info(f"Comision Cabify del dia: {formato_pesos(comision_cabify)}")
+            st.info(f"Neto real del dia (efectivo + transferencias - gastos): {formato_pesos(neto_del_dia)}")
 
             if km_recorridos > 0:
                 eficiencia_dia = (km_ocupados / km_recorridos) * 100
                 ingreso_por_km = neto_del_dia / km_recorridos if km_recorridos > 0 else 0
-                st.info(f"🛣️ Eficiencia del día: {eficiencia_dia:.1f}% ocupado | {formato_pesos(ingreso_por_km)} por km recorrido")
-
-            if efectivo_contado_real > 0:
-                efectivo_neto_esperado = efectivo_del_dia - gastos_del_dia
-                diferencia = efectivo_contado_real - efectivo_neto_esperado
-                if abs(diferencia) < 1:
-                    st.success(f"🔎 Arqueo: cuadra perfecto ({formato_pesos(efectivo_contado_real)})")
-                elif diferencia > 0:
-                    st.warning(f"🔎 Arqueo: tenés {formato_pesos(diferencia)} MÁS de lo esperado. Revisá si te faltó cargar algo.")
-                else:
-                    st.warning(f"🔎 Arqueo: te FALTAN {formato_pesos(abs(diferencia))} respecto de lo esperado. Revisá gastos o cobros no cargados.")
+                st.info(f"Eficiencia del dia: {eficiencia_dia:.1f}% ocupado | {formato_pesos(ingreso_por_km)} por km recorrido")
 
 # ---------------------------------------------------
 with tab_cierre:

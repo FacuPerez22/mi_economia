@@ -138,6 +138,15 @@ def obtener_categorias():
     return filas
 
 
+def _convertir_a_float(df, columnas_texto):
+    """Convierte columnas DECIMAL (que MySQL devuelve como Decimal) a float,
+    para poder mezclarlas sin error con los floats del saldo inicial."""
+    for col in df.columns:
+        if col not in columnas_texto:
+            df[col] = df[col].astype(float)
+    return df
+
+
 def obtener_gastos(usuario_id):
     conexion = conectar()
     cursor = conexion.cursor()
@@ -152,7 +161,8 @@ def obtener_gastos(usuario_id):
     columnas = [col[0] for col in cursor.description]
     cursor.close()
     conexion.close()
-    return pd.DataFrame(filas, columns=columnas)
+    df = pd.DataFrame(filas, columns=columnas)
+    return _convertir_a_float(df, columnas_texto=["fecha", "categoria", "descripcion", "metodo_pago"])
 
 
 def obtener_turnos(usuario_id):
@@ -173,7 +183,8 @@ def obtener_turnos(usuario_id):
     columnas = [col[0] for col in cursor.description]
     cursor.close()
     conexion.close()
-    return pd.DataFrame(filas, columns=columnas)
+    df = pd.DataFrame(filas, columns=columnas)
+    return _convertir_a_float(df, columnas_texto=["fecha"])
 
 
 def obtener_cierres(usuario_id):
