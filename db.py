@@ -101,10 +101,14 @@ def guardar_cierre_mensual(mes_anio, km_totales, km_ocupados, fichas_totales, ca
     conexion.close()
 
 
-def agregar_categoria(nombre):
+def agregar_categoria(nombre, tipo="personal"):
+    """tipo: 'operativo' (relacionado al auto/taxi) o 'personal' (vida)."""
     conexion = conectar()
     cursor = conexion.cursor()
-    cursor.execute("INSERT INTO categorias (nombre) VALUES (%s)", (nombre,))
+    cursor.execute(
+        "INSERT INTO categorias (nombre, tipo) VALUES (%s, %s)",
+        (nombre, tipo)
+    )
     conexion.commit()
     cursor.close()
     conexion.close()
@@ -126,12 +130,27 @@ def guardar_saldo_inicial(usuario_id, fecha_inicio, efectivo_inicial, banco_inic
     cursor.close()
     conexion.close()
 
+
+def guardar_deposito(fecha, monto, descripcion, usuario_id):
+    """Registra un traspaso de efectivo -> banco (NO es gasto ni ingreso nuevo,
+    es la misma plata que cambia de lugar)."""
+    conexion = conectar()
+    cursor = conexion.cursor()
+    query = """
+        INSERT INTO depositos (fecha, monto, descripcion, usuario_id)
+        VALUES (%s, %s, %s, %s)
+    """
+    cursor.execute(query, (fecha, monto, descripcion, usuario_id))
+    conexion.commit()
+    cursor.close()
+    conexion.close()
+
 # ---- LEER ----
 
 def obtener_categorias():
     conexion = conectar()
     cursor = conexion.cursor()
-    cursor.execute("SELECT id, nombre FROM categorias ORDER BY nombre")
+    cursor.execute("SELECT id, nombre, tipo FROM categorias ORDER BY nombre")
     filas = cursor.fetchall()
     cursor.close()
     conexion.close()
@@ -151,7 +170,7 @@ def obtener_gastos(usuario_id):
     conexion = conectar()
     cursor = conexion.cursor()
     cursor.execute("""
-        SELECT g.id, g.fecha, c.nombre AS categoria, g.monto, g.descripcion, g.metodo_pago
+        SELECT g.id, g.fecha, c.nombre AS categoria, c.tipo AS tipo, g.monto, g.descripcion, g.metodo_pago
         FROM gastos_vida g
         JOIN categorias c ON g.categoria_id = c.id
         WHERE g.usuario_id = %s
@@ -162,7 +181,7 @@ def obtener_gastos(usuario_id):
     cursor.close()
     conexion.close()
     df = pd.DataFrame(filas, columns=columnas)
-    return _convertir_a_float(df, columnas_texto=["fecha", "categoria", "descripcion", "metodo_pago"])
+    return _convertir_a_float(df, columnas_texto=["fecha", "categoria", "tipo", "descripcion", "metodo_pago"])
 
 
 def obtener_turnos(usuario_id):
@@ -211,6 +230,21 @@ def obtener_saldo_inicial(usuario_id):
     if fila is None:
         return None
     return {"fecha_inicio": fila[0], "efectivo_inicial": float(fila[1]), "banco_inicial": float(fila[2])}
+
+
+def obtener_depositos(usuario_id):
+    conexion = conectar()
+    cursor = conexion.cursor()
+    cursor.execute(
+        "SELECT id, fecha, monto, descripcion FROM depositos WHERE usuario_id = %s ORDER BY fecha DESC",
+        (usuario_id,)
+    )
+    filas = cursor.fetchall()
+    columnas = [col[0] for col in cursor.description]
+    cursor.close()
+    conexion.close()
+    df = pd.DataFrame(filas, columns=columnas)
+    return _convertir_a_float(df, columnas_texto=["fecha", "descripcion"])
 
 
 def guardar_cierre_financiero(usuario_id, mes_anio, ingreso_efectivo, ingreso_transferencia,

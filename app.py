@@ -52,8 +52,8 @@ with col_logout:
         st.session_state.usuario_nombre = None
         st.rerun()
 
-tab_tablero, tab_gasto, tab_turno, tab_cierre, tab_resumen = st.tabs([
-    "📊 Tablero", "💸 Cargar Gasto", "🚗 Cargar Turno", "📅 Cierre Mensual", "🗂️ Resumen Mensual"
+tab_tablero, tab_gasto, tab_turno, tab_deposito, tab_cierre, tab_resumen = st.tabs([
+    "📊 Tablero", "💸 Cargar Gasto", "🚗 Cargar Turno", "🏦 Depósito", "📅 Cierre Mensual", "🗂️ Resumen Mensual"
 ])
 
 # ---------------------------------------------------
@@ -61,7 +61,7 @@ with tab_gasto:
     st.header("Cargar un gasto")
 
     categorias = db.obtener_categorias()
-    nombres_categorias = [nombre for id_cat, nombre in categorias]
+    nombres_categorias = [nombre for id_cat, nombre, tipo in categorias]
 
     with st.form("form_gasto", clear_on_submit=True):
         fecha = st.date_input("Fecha", value=datetime.date.today())
@@ -73,18 +73,23 @@ with tab_gasto:
         enviado = st.form_submit_button("Guardar gasto")
         if enviado:
             monto = monto or 0
-            categoria_id = next(id_cat for id_cat, nombre in categorias if nombre == categoria_nombre)
+            categoria_id = next(id_cat for id_cat, nombre, tipo in categorias if nombre == categoria_nombre)
             db.guardar_gasto(fecha, categoria_id, monto, descripcion, metodo_pago, usuario_id)
             st.success(f"¡Gasto de {formato_pesos(monto)} en '{categoria_nombre}' guardado! ✅")
 
     st.divider()
     st.subheader("¿Necesitás una categoría nueva?")
     with st.form("form_nueva_categoria", clear_on_submit=True):
-        nueva_categoria = st.text_input("Nombre de la categoría nueva (ej: Veterinario)")
+        nueva_categoria = st.text_input("Nombre de la categoría nueva (ej: Veterinario, Service del auto)")
+        tipo_nueva_categoria = st.radio(
+            "¿Qué tipo de gasto es?",
+            ["Personal (vida)", "Operativo (relacionado al auto/taxi)"]
+        )
         agregar = st.form_submit_button("Agregar categoría")
         if agregar and nueva_categoria.strip() != "":
-            db.agregar_categoria(nueva_categoria.strip())
-            st.success(f"Categoría '{nueva_categoria}' agregada. Ya la vas a ver en el desplegable de arriba.")
+            tipo_valor = "operativo" if tipo_nueva_categoria.startswith("Operativo") else "personal"
+            db.agregar_categoria(nueva_categoria.strip(), tipo_valor)
+            st.success(f"Categoría '{nueva_categoria}' agregada como '{tipo_valor}'. Ya la vas a ver en el desplegable de arriba.")
             st.rerun()
 
 # ---------------------------------------------------
@@ -186,6 +191,34 @@ with tab_turno:
                 st.info(f"Eficiencia del dia: {eficiencia_dia:.1f}% ocupado | {formato_pesos(ingreso_por_km)} por km recorrido")
 
 # ---------------------------------------------------
+with tab_deposito:
+    st.header("Depositar efectivo al banco")
+    st.caption(
+        "Usá esto cuando movés plata de tu bolsillo (efectivo) a tu cuenta o MercadoPago, "
+        "por ejemplo para poder pagar algo por transferencia. Esto NO es un gasto nuevo ni un ingreso: "
+        "es la misma plata que cambia de lugar. El tablero va a restar del efectivo real y sumar al banco real."
+    )
+
+    with st.form("form_deposito", clear_on_submit=True):
+        fecha_dep = st.date_input("Fecha del depósito", value=datetime.date.today(), key="fecha_deposito")
+        monto_dep = st.number_input("Monto depositado ($)", min_value=0, step=100, format="%d", value=None)
+        descripcion_dep = st.text_input("Descripción (opcional, ej: para pagar el service)")
+
+        enviado_dep = st.form_submit_button("Guardar depósito")
+        if enviado_dep:
+            monto_dep = monto_dep or 0
+            if monto_dep > 0:
+                db.guardar_deposito(fecha_dep, monto_dep, descripcion_dep, usuario_id)
+                st.success(f"Depósito de {formato_pesos(monto_dep)} guardado. Ya se refleja en tu tablero. ✅")
+            else:
+                st.warning("Ingresá un monto mayor a $0.")
+
+    st.divider()
+    st.subheader("Depósitos cargados")
+    depositos_tabla = db.obtener_depositos(usuario_id)
+    st.dataframe(depositos_tabla, use_container_width=True)
+
+# ---------------------------------------------------
 with tab_cierre:
     st.header("Cargar el ticket mensual del reloj")
 
@@ -214,6 +247,7 @@ with tab_tablero:
     turnos = db.obtener_turnos(usuario_id)
     cierres = db.obtener_cierres(usuario_id)
     saldo = db.obtener_saldo_inicial(usuario_id)
+    depositos = db.obtener_depositos(usuario_id)
 
     with st.expander("⚙️ Configurar saldo inicial (arrancar de cero con la plata real)"):
         st.caption(
@@ -252,15 +286,19 @@ with tab_tablero:
             turnos["fecha"] = pd.to_datetime(turnos["fecha"]).dt.date
         if not gastos.empty:
             gastos["fecha"] = pd.to_datetime(gastos["fecha"]).dt.date
+        if not depositos.empty:
+            depositos["fecha"] = pd.to_datetime(depositos["fecha"]).dt.date
 
         if saldo:
             fecha_desde = saldo["fecha_inicio"]
             turnos_periodo = turnos[turnos["fecha"] >= fecha_desde] if not turnos.empty else turnos
             gastos_periodo = gastos[gastos["fecha"] >= fecha_desde] if not gastos.empty else gastos
+            depositos_periodo = depositos[depositos["fecha"] >= fecha_desde] if not depositos.empty else depositos
         else:
             fecha_desde = None
             turnos_periodo = turnos
             gastos_periodo = gastos
+            depositos_periodo = depositos
 
         if not turnos_periodo.empty:
             efectivo_movimiento = (turnos_periodo["efectivo_calle"] + turnos_periodo["uber_efectivo"] + turnos_periodo["cabify_efectivo"]).sum()
@@ -276,13 +314,18 @@ with tab_tablero:
         if not gastos_periodo.empty:
             gastos_vida_efectivo = gastos_periodo.loc[gastos_periodo["metodo_pago"] == "Efectivo", "monto"].sum()
             gastos_vida_tarjeta = gastos_periodo.loc[gastos_periodo["metodo_pago"] == "Tarjeta", "monto"].sum()
+            gastos_vida_operativo = gastos_periodo.loc[gastos_periodo["tipo"] == "operativo", "monto"].sum()
+            gastos_vida_personal = gastos_periodo.loc[gastos_periodo["tipo"] == "personal", "monto"].sum()
         else:
             gastos_vida_efectivo = gastos_vida_tarjeta = 0
+            gastos_vida_operativo = gastos_vida_personal = 0
 
         gastos_vida_total = gastos_vida_efectivo + gastos_vida_tarjeta
+        depositos_movimiento = depositos_periodo["monto"].sum() if not depositos_periodo.empty else 0
 
-        efectivo_actual = (saldo["efectivo_inicial"] if saldo else 0) + efectivo_movimiento - gastos_turnos - gastos_vida_efectivo
-        banco_actual = (saldo["banco_inicial"] if saldo else 0) + transferencia_movimiento - gastos_vida_tarjeta
+        # Los depósitos mueven plata de efectivo a banco: no son gasto ni ingreso.
+        efectivo_actual = (saldo["efectivo_inicial"] if saldo else 0) + efectivo_movimiento - gastos_turnos - gastos_vida_efectivo - depositos_movimiento
+        banco_actual = (saldo["banco_inicial"] if saldo else 0) + transferencia_movimiento - gastos_vida_tarjeta + depositos_movimiento
         ahorro = efectivo_actual + banco_actual
 
         if saldo:
@@ -293,11 +336,16 @@ with tab_tablero:
         st.metric("💵 Efectivo real (tu bolsillo)", formato_pesos(efectivo_actual))
         st.metric("🏦 Banco/MercadoPago real", formato_pesos(banco_actual))
         st.metric("Poder de ahorro total", formato_pesos(ahorro))
+        if depositos_movimiento > 0:
+            st.caption(f"🔁 Incluye {formato_pesos(depositos_movimiento)} depositados del efectivo al banco en este período.")
         st.divider()
         st.metric("Recaudación reloj (bruta, informativo)", formato_pesos(recaudacion_bruta))
         st.metric("🟢 Comisión Uber acumulada", formato_pesos(comision_uber_total))
         st.metric("🟣 Comisión Cabify acumulada", formato_pesos(comision_cabify_total))
         st.metric("Gastos totales del período", formato_pesos(gastos_vida_total + gastos_turnos))
+        col_op_g, col_pers_g = st.columns(2)
+        col_op_g.metric("🔧 Gastos operativos (auto)", formato_pesos(gastos_turnos + gastos_vida_operativo))
+        col_pers_g.metric("🧍 Gastos personales", formato_pesos(gastos_vida_personal))
 
         if not turnos.empty and turnos.iloc[0]["efectivo_contado_real"] > 0:
             ultimo_turno = turnos.iloc[0]
@@ -379,24 +427,39 @@ with tab_resumen:
         col_op2.metric("Nafta", formato_pesos(total_nafta_mes))
         col_op3.metric("Comida laboral", formato_pesos(total_comida_mes))
 
+        if not gastos_mes.empty:
+            gastos_operativos_extra_mes = gastos_mes.loc[gastos_mes["tipo"] == "operativo", "monto"].sum()
+            gastos_personales_solo_mes = gastos_mes.loc[gastos_mes["tipo"] == "personal", "monto"].sum()
+        else:
+            gastos_operativos_extra_mes = 0
+            gastos_personales_solo_mes = 0
+
+        if gastos_operativos_extra_mes > 0:
+            st.metric("Otros gastos operativos (categorías marcadas como operativo)", formato_pesos(gastos_operativos_extra_mes))
+
         st.divider()
 
         st.subheader("🧾 Gastos personales del mes por categoría")
         if not gastos_mes.empty:
             resumen_categorias = (
-                gastos_mes.groupby("categoria")["monto"]
+                gastos_mes.groupby(["categoria", "tipo"])["monto"]
                 .agg(total="sum", cantidad="count")
                 .sort_values("total", ascending=False)
             )
             st.dataframe(resumen_categorias, use_container_width=True)
-            st.bar_chart(resumen_categorias["total"])
-            st.metric("Total gastos personales del mes", formato_pesos(gastos_mes["monto"].sum()))
+            st.bar_chart(gastos_mes.groupby("categoria")["monto"].sum())
+            st.metric("Total gastos personales del mes", formato_pesos(gastos_personales_solo_mes))
         else:
             st.info("No hay gastos personales cargados en este mes.")
 
         st.divider()
-        total_mes = total_gnc_mes + total_nafta_mes + total_comida_mes + (gastos_mes["monto"].sum() if not gastos_mes.empty else 0)
-        st.metric("💸 Total general de gastos del mes", formato_pesos(total_mes))
+        gastos_operativos_mes = total_gnc_mes + total_nafta_mes + total_comida_mes + gastos_operativos_extra_mes
+        gastos_personales_mes = gastos_personales_solo_mes
+        total_mes = gastos_operativos_mes + gastos_personales_mes
+        col_tot1, col_tot2, col_tot3 = st.columns(3)
+        col_tot1.metric("🔧 Total gastos operativos", formato_pesos(gastos_operativos_mes))
+        col_tot2.metric("🧍 Total gastos personales", formato_pesos(gastos_personales_mes))
+        col_tot3.metric("💸 Total general del mes", formato_pesos(total_mes))
 
         st.divider()
         st.subheader("🔒 Cerrar este mes")
@@ -407,8 +470,6 @@ with tab_resumen:
 
         ingreso_efectivo_mes = (turnos_mes["efectivo_calle"] + turnos_mes["uber_efectivo"] + turnos_mes["cabify_efectivo"]).sum() if not turnos_mes.empty else 0
         ingreso_transferencia_mes = (turnos_mes["transferencia_calle"] + turnos_mes["uber_transferido"] + turnos_mes["cabify_transferido"]).sum() if not turnos_mes.empty else 0
-        gastos_operativos_mes = total_gnc_mes + total_nafta_mes + total_comida_mes
-        gastos_personales_mes = gastos_mes["monto"].sum() if not gastos_mes.empty else 0
         resultado_neto_mes = ingreso_efectivo_mes + ingreso_transferencia_mes - gastos_operativos_mes - gastos_personales_mes
         km_recorridos_mes_total = turnos_mes["km_recorridos"].sum() if not turnos_mes.empty else 0
         km_ocupados_mes_total = turnos_mes["km_ocupados"].sum() if not turnos_mes.empty else 0
