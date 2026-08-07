@@ -218,6 +218,39 @@ with tab_deposito:
     depositos_tabla = db.obtener_depositos(usuario_id)
     st.dataframe(depositos_tabla, use_container_width=True)
 
+    st.divider()
+    st.subheader("🧮 Ajuste de caja / banco (arqueo)")
+    st.caption(
+        "Usá esto cuando contás la plata real y no coincide con lo que muestra la app "
+        "(diferencias chicas de vuelto, algún gasto que no anotaste, etc). "
+        "Queda registrado el ajuste con su motivo, no se pisa ni se esconde la diferencia."
+    )
+    with st.form("form_ajuste", clear_on_submit=True):
+        fecha_ajuste = st.date_input("Fecha del ajuste", value=datetime.date.today(), key="fecha_ajuste")
+        cuenta_ajuste = st.radio("Cuenta a ajustar", ["Efectivo", "Banco"])
+        tipo_ajuste = st.radio(
+            "¿Qué pasó?",
+            ["Sumar (tengo más plata real de la que muestra la app)", "Restar (tengo menos plata real de la que muestra la app)"]
+        )
+        monto_ajuste = st.number_input("Monto de la diferencia ($)", min_value=0, step=100, format="%d", value=None)
+        motivo_ajuste = st.text_input("Motivo (opcional, ej: diferencia de vuelto, gasto no anotado)")
+
+        enviado_ajuste = st.form_submit_button("Guardar ajuste")
+        if enviado_ajuste:
+            monto_ajuste = monto_ajuste or 0
+            if monto_ajuste > 0:
+                cuenta_valor = "efectivo" if cuenta_ajuste == "Efectivo" else "banco"
+                monto_final = monto_ajuste if tipo_ajuste.startswith("Sumar") else -monto_ajuste
+                db.guardar_ajuste(fecha_ajuste, cuenta_valor, monto_final, motivo_ajuste, usuario_id)
+                st.success(f"Ajuste de {formato_pesos(monto_ajuste)} en {cuenta_ajuste} guardado. Ya se refleja en tu tablero. ✅")
+            else:
+                st.warning("Ingresá un monto mayor a $0.")
+
+    st.divider()
+    st.subheader("Ajustes cargados")
+    ajustes_tabla = db.obtener_ajustes(usuario_id)
+    st.dataframe(ajustes_tabla, use_container_width=True)
+
 # ---------------------------------------------------
 with tab_cierre:
     st.header("Cargar el ticket mensual del reloj")
@@ -248,6 +281,7 @@ with tab_tablero:
     cierres = db.obtener_cierres(usuario_id)
     saldo = db.obtener_saldo_inicial(usuario_id)
     depositos = db.obtener_depositos(usuario_id)
+    ajustes = db.obtener_ajustes(usuario_id)
 
     with st.expander("⚙️ Configurar saldo inicial (arrancar de cero con la plata real)"):
         st.caption(
@@ -288,17 +322,21 @@ with tab_tablero:
             gastos["fecha"] = pd.to_datetime(gastos["fecha"]).dt.date
         if not depositos.empty:
             depositos["fecha"] = pd.to_datetime(depositos["fecha"]).dt.date
+        if not ajustes.empty:
+            ajustes["fecha"] = pd.to_datetime(ajustes["fecha"]).dt.date
 
         if saldo:
             fecha_desde = saldo["fecha_inicio"]
             turnos_periodo = turnos[turnos["fecha"] >= fecha_desde] if not turnos.empty else turnos
             gastos_periodo = gastos[gastos["fecha"] >= fecha_desde] if not gastos.empty else gastos
             depositos_periodo = depositos[depositos["fecha"] >= fecha_desde] if not depositos.empty else depositos
+            ajustes_periodo = ajustes[ajustes["fecha"] >= fecha_desde] if not ajustes.empty else ajustes
         else:
             fecha_desde = None
             turnos_periodo = turnos
             gastos_periodo = gastos
             depositos_periodo = depositos
+            ajustes_periodo = ajustes
 
         if not turnos_periodo.empty:
             efectivo_movimiento = (turnos_periodo["efectivo_calle"] + turnos_periodo["uber_efectivo"] + turnos_periodo["cabify_efectivo"]).sum()
@@ -323,9 +361,16 @@ with tab_tablero:
         gastos_vida_total = gastos_vida_efectivo + gastos_vida_tarjeta
         depositos_movimiento = depositos_periodo["monto"].sum() if not depositos_periodo.empty else 0
 
+        if not ajustes_periodo.empty:
+            ajuste_efectivo_total = ajustes_periodo.loc[ajustes_periodo["cuenta"] == "efectivo", "monto"].sum()
+            ajuste_banco_total = ajustes_periodo.loc[ajustes_periodo["cuenta"] == "banco", "monto"].sum()
+        else:
+            ajuste_efectivo_total = ajuste_banco_total = 0
+
         # Los depósitos mueven plata de efectivo a banco: no son gasto ni ingreso.
-        efectivo_actual = (saldo["efectivo_inicial"] if saldo else 0) + efectivo_movimiento - gastos_turnos - gastos_vida_efectivo - depositos_movimiento
-        banco_actual = (saldo["banco_inicial"] if saldo else 0) + transferencia_movimiento - gastos_vida_tarjeta + depositos_movimiento
+        # Los ajustes son correcciones manuales de arqueo (pueden ser positivos o negativos).
+        efectivo_actual = (saldo["efectivo_inicial"] if saldo else 0) + efectivo_movimiento - gastos_turnos - gastos_vida_efectivo - depositos_movimiento + ajuste_efectivo_total
+        banco_actual = (saldo["banco_inicial"] if saldo else 0) + transferencia_movimiento - gastos_vida_tarjeta + depositos_movimiento + ajuste_banco_total
         ahorro = efectivo_actual + banco_actual
 
         if saldo:
@@ -338,6 +383,11 @@ with tab_tablero:
         st.metric("Poder de ahorro total", formato_pesos(ahorro))
         if depositos_movimiento > 0:
             st.caption(f"🔁 Incluye {formato_pesos(depositos_movimiento)} depositados del efectivo al banco en este período.")
+        if ajuste_efectivo_total != 0 or ajuste_banco_total != 0:
+            st.caption(
+                f"🧮 Incluye ajustes de arqueo: {formato_pesos(ajuste_efectivo_total)} en efectivo, "
+                f"{formato_pesos(ajuste_banco_total)} en banco."
+            )
         st.divider()
         st.metric("Recaudación reloj (bruta, informativo)", formato_pesos(recaudacion_bruta))
         st.metric("🟢 Comisión Uber acumulada", formato_pesos(comision_uber_total))

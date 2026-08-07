@@ -145,6 +145,21 @@ def guardar_deposito(fecha, monto, descripcion, usuario_id):
     cursor.close()
     conexion.close()
 
+
+def guardar_ajuste(fecha, cuenta, monto, motivo, usuario_id):
+    """Ajuste manual de caja/banco (arqueo). `cuenta` es 'efectivo' o 'banco'.
+    `monto` puede ser positivo (sumar) o negativo (restar)."""
+    conexion = conectar()
+    cursor = conexion.cursor()
+    query = """
+        INSERT INTO ajustes_saldo (fecha, cuenta, monto, motivo, usuario_id)
+        VALUES (%s, %s, %s, %s, %s)
+    """
+    cursor.execute(query, (fecha, cuenta, monto, motivo, usuario_id))
+    conexion.commit()
+    cursor.close()
+    conexion.close()
+
 # ---- LEER ----
 
 def obtener_categorias():
@@ -245,6 +260,21 @@ def obtener_depositos(usuario_id):
     conexion.close()
     df = pd.DataFrame(filas, columns=columnas)
     return _convertir_a_float(df, columnas_texto=["fecha", "descripcion"])
+
+
+def obtener_ajustes(usuario_id):
+    conexion = conectar()
+    cursor = conexion.cursor()
+    cursor.execute(
+        "SELECT id, fecha, cuenta, monto, motivo FROM ajustes_saldo WHERE usuario_id = %s ORDER BY fecha DESC",
+        (usuario_id,)
+    )
+    filas = cursor.fetchall()
+    columnas = [col[0] for col in cursor.description]
+    cursor.close()
+    conexion.close()
+    df = pd.DataFrame(filas, columns=columnas)
+    return _convertir_a_float(df, columnas_texto=["fecha", "cuenta", "motivo"])
 
 
 def guardar_cierre_financiero(usuario_id, mes_anio, ingreso_efectivo, ingreso_transferencia,
