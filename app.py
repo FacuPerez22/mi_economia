@@ -322,4 +322,4 @@ with tab_resumen:
         c1, c2, c3 = st.columns(3)
         c1.metric("Total operativo", formato_pesos(gnc_m + nafta_m + comida_m + op_ex))
         c2.metric("Total personal", formato_pesos(pers))
-        c3.metric("Total general", formato_pesos(gnc_m + nafta_m + comida_m + op_ex + pers))git s
+        c3.metric("Total general", formato_pesos(gnc_m + nafta_m + comida_m + op_ex + pers))
