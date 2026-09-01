@@ -367,8 +367,6 @@ with tab_tablero:
         else:
             ajuste_efectivo_total = ajuste_banco_total = 0
 
-        # Los depósitos mueven plata de efectivo a banco: no son gasto ni ingreso.
-        # Los ajustes son correcciones manuales de arqueo (pueden ser positivos o negativos).
         efectivo_actual = (saldo["efectivo_inicial"] if saldo else 0) + efectivo_movimiento - gastos_turnos - gastos_vida_efectivo - depositos_movimiento + ajuste_efectivo_total
         banco_actual = (saldo["banco_inicial"] if saldo else 0) + transferencia_movimiento - gastos_vida_tarjeta + depositos_movimiento + ajuste_banco_total
         ahorro = efectivo_actual + banco_actual
@@ -468,15 +466,34 @@ with tab_resumen:
         gastos_mes = gastos_r[gastos_r["fecha"].dt.to_period("M").astype(str) == mes_elegido] if not gastos_r.empty else gastos_r
         turnos_mes = turnos_r[turnos_r["fecha"].dt.to_period("M").astype(str) == mes_elegido] if not turnos_r.empty else turnos_r
 
-        st.subheader("⛽ Gastos operativos del mes (turnos)")
-        col_op1, col_op2, col_op3 = st.columns(3)
-        total_gnc_mes = turnos_mes["gasto_gnc"].sum() if not turnos_mes.empty else 0
-        total_nafta_mes = turnos_mes["gasto_nafta"].sum() if not turnos_mes.empty else 0
-        total_comida_mes = turnos_mes["gasto_comida_laboral"].sum() if not turnos_mes.empty else 0
-        col_op1.metric("GNC", formato_pesos(total_gnc_mes))
-        col_op2.metric("Nafta", formato_pesos(total_nafta_mes))
-        col_op3.metric("Comida laboral", formato_pesos(total_comida_mes))
+        # --- CÁLCULO DE GASTOS DEL AUTO Y COMISIONES DEL MES ---
+        if not turnos_mes.empty:
+            total_gnc_mes = turnos_mes["gasto_gnc"].sum()
+            total_nafta_mes = turnos_mes["gasto_nafta"].sum()
+            total_comida_mes = turnos_mes["gasto_comida_laboral"].sum()
+            
+            comision_uber_mes = ((turnos_mes["reloj_uber"] - turnos_mes["uber_efectivo"]) - turnos_mes["uber_transferido"]).sum()
+            comision_cabify_mes = ((turnos_mes["reloj_cabify"] - turnos_mes["cabify_efectivo"]) - turnos_mes["cabify_transferido"]).sum()
+        else:
+            total_gnc_mes = total_nafta_mes = total_comida_mes = 0
+            comision_uber_mes = comision_cabify_mes = 0
 
+        # --- DESPLEGABLE VISUAL DE GASTOS DIARIOS Y COMISIONES ---
+        st.subheader("⛽ Detalle operativo del mes (Turnos y Apps)")
+        with st.expander("🔍 Ver detalle de Combustible, Comida y Comisiones de Apps", expanded=True):
+            st.markdown("**Combustible y Comida Laboral**")
+            col_op1, col_op2, col_op3 = st.columns(3)
+            col_op1.metric("GNC", formato_pesos(total_gnc_mes))
+            col_op2.metric("Nafta", formato_pesos(total_nafta_mes))
+            col_op3.metric("Comida laboral", formato_pesos(total_comida_mes))
+
+            st.divider()
+            st.markdown("**Comisiones retenidas por Apps**")
+            col_app1, col_app2 = st.columns(2)
+            col_app1.metric("Comisión Uber", formato_pesos(comision_uber_mes))
+            col_app2.metric("Comisión Cabify", formato_pesos(comision_cabify_mes))
+
+        # --- CÁLCULO GENERAL DE GASTOS ---
         if not gastos_mes.empty:
             gastos_operativos_extra_mes = gastos_mes.loc[gastos_mes["tipo"] == "operativo", "monto"].sum()
             gastos_personales_solo_mes = gastos_mes.loc[gastos_mes["tipo"] == "personal", "monto"].sum()
@@ -485,19 +502,21 @@ with tab_resumen:
             gastos_personales_solo_mes = 0
 
         if gastos_operativos_extra_mes > 0:
-            st.metric("Otros gastos operativos (categorías marcadas como operativo)", formato_pesos(gastos_operativos_extra_mes))
+            st.metric("Otros gastos operativos (Service, repuestos, etc)", formato_pesos(gastos_operativos_extra_mes))
 
         st.divider()
 
         st.subheader("🧾 Gastos personales del mes por categoría")
-        if not gastos_mes.empty:
-            resumen_categorias = (
-                gastos_mes.groupby(["categoria", "tipo"])["monto"]
-                .agg(total="sum", cantidad="count")
-                .sort_values("total", ascending=False)
-            )
-            st.dataframe(resumen_categorias, use_container_width=True)
-            st.bar_chart(gastos_mes.groupby("categoria")["monto"].sum())
+        if not gastos_mes.empty and gastos_personales_solo_mes > 0:
+            gastos_personales_df = gastos_mes[gastos_mes["tipo"] == "personal"]
+            if not gastos_personales_df.empty:
+                resumen_categorias = (
+                    gastos_personales_df.groupby("categoria")["monto"]
+                    .agg(total="sum", cantidad="count")
+                    .sort_values("total", ascending=False)
+                )
+                st.dataframe(resumen_categorias, use_container_width=True)
+                st.bar_chart(gastos_personales_df.groupby("categoria")["monto"].sum())
             st.metric("Total gastos personales del mes", formato_pesos(gastos_personales_solo_mes))
         else:
             st.info("No hay gastos personales cargados en este mes.")
@@ -506,6 +525,7 @@ with tab_resumen:
         gastos_operativos_mes = total_gnc_mes + total_nafta_mes + total_comida_mes + gastos_operativos_extra_mes
         gastos_personales_mes = gastos_personales_solo_mes
         total_mes = gastos_operativos_mes + gastos_personales_mes
+        
         col_tot1, col_tot2, col_tot3 = st.columns(3)
         col_tot1.metric("🔧 Total gastos operativos", formato_pesos(gastos_operativos_mes))
         col_tot2.metric("🧍 Total gastos personales", formato_pesos(gastos_personales_mes))
