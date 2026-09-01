@@ -324,3 +324,27 @@ def obtener_cierres_financieros(usuario_id):
     cursor.close()
     conexion.close()
     return pd.DataFrame(filas, columns=columnas)
+
+
+def guardar_ahorro(fecha, monto, origen, descripcion, usuario_id):
+    conexion = conectar()
+    cursor = conexion.cursor()
+    query = """
+        INSERT INTO ahorros (fecha, monto, origen, descripcion, usuario_id)
+        VALUES (%s, %s, %s, %s, %s)
+    """
+    cursor.execute(query, (fecha, monto, origen, descripcion, usuario_id))
+    conexion.commit()
+    cursor.close()
+    conexion.close()
+
+def obtener_ahorros(usuario_id):
+    conexion = conectar()
+    cursor = conexion.cursor()
+    cursor.execute("SELECT id, fecha, monto, origen, descripcion FROM ahorros WHERE usuario_id = %s ORDER BY fecha DESC", (usuario_id,))
+    filas = cursor.fetchall()
+    columnas = [col[0] for col in cursor.description]
+    cursor.close()
+    conexion.close()
+    df = pd.DataFrame(filas, columns=columnas)
+    return _convertir_a_float(df, columnas_texto=["fecha", "origen", "descripcion"])
