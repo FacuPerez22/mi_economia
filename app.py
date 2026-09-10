@@ -121,15 +121,25 @@ with tab_turno:
         if st.form_submit_button("Guardar turno"):
             total_calle = total_calle or 0
             transferencia_calle = transferencia_calle or 0
-            if transferencia_calle > total_calle:
-                st.error("Error: La transferencia no puede ser mayor al total.")
+            reloj_uber = reloj_uber or 0
+            reloj_cabify = reloj_cabify or 0
+
+            # "Facturado reloj" ya es el total del día completo (calle + Uber + Cabify,
+            # porque el reloj se aprieta en cada viaje sin importar el canal).
+            # reloj_uber y reloj_cabify son solo la porción de ese total que vino por cada
+            # app (para poder calcular la comisión) — NO se suman de nuevo al total.
+            if transferencia_calle + reloj_uber + reloj_cabify > total_calle:
+                st.error("Error: Transferencia + Uber + Cabify no puede superar el total facturado por el reloj.")
                 st.stop()
 
+            recaudacion_total = total_calle
+            efectivo_calle_real = total_calle - transferencia_calle - reloj_uber - reloj_cabify
+
             db.guardar_turno_diario(
-                fecha, total_calle + (reloj_uber or 0) + (reloj_cabify or 0), km_recorridos or 0, km_ocupados or 0,
-                total_calle - transferencia_calle, transferencia_calle,
-                reloj_uber or 0, uber_transferido or 0, uber_efectivo or 0,
-                reloj_cabify or 0, cabify_transferido or 0, cabify_efectivo or 0,
+                fecha, recaudacion_total, km_recorridos or 0, km_ocupados or 0,
+                efectivo_calle_real, transferencia_calle,
+                reloj_uber, uber_transferido or 0, uber_efectivo or 0,
+                reloj_cabify, cabify_transferido or 0, cabify_efectivo or 0,
                 0, gasto_gnc or 0, gasto_nafta or 0, gasto_comida_laboral or 0, usuario_id
             )
             st.success("Turno guardado correctamente.")
@@ -285,7 +295,11 @@ with tab_tablero:
     st.dataframe(gastos, use_container_width=True)
 
     st.subheader("📋 Últimos turnos cargados")
-    st.dataframe(turnos, use_container_width=True)
+    turnos_vista = turnos.copy()
+    if not turnos_vista.empty:
+        turnos_vista["comision_uber"] = turnos_vista["reloj_uber"] - turnos_vista["uber_transferido"] - turnos_vista["uber_efectivo"]
+        turnos_vista["comision_cabify"] = turnos_vista["reloj_cabify"] - turnos_vista["cabify_transferido"] - turnos_vista["cabify_efectivo"]
+    st.dataframe(turnos_vista, use_container_width=True)
 
 # ---------------------------------------------------
 with tab_resumen:
