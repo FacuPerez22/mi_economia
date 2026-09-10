@@ -279,6 +279,14 @@ with tab_tablero:
             st.metric("Eficiencia diaria promedio", f"{(km_ocu / km_rec) * 100:.1f}%")
             st.metric("Ingreso por km", formato_pesos(ingresos_km / km_rec if km_rec > 0 else 0))
 
+    st.divider()
+
+    st.subheader("📋 Últimos gastos cargados")
+    st.dataframe(gastos, use_container_width=True)
+
+    st.subheader("📋 Últimos turnos cargados")
+    st.dataframe(turnos, use_container_width=True)
+
 # ---------------------------------------------------
 with tab_resumen:
     st.header("Resumen mensual")
