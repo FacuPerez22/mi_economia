@@ -49,7 +49,7 @@ with col_logout:
         st.rerun()
 
 tab_tablero, tab_gasto, tab_turno, tab_deposito, tab_ahorro, tab_cierre, tab_resumen = st.tabs([
-    "📊 Tablero", "💸 Cargar Gasto", "🚗 Cargar Turno", "🏦 Depósito", "🐷 Ahorro", "📅 Cierre", "🗂️️ Resumen"
+    "📊 Tablero", "💸 Cargar Gasto", "🚗 Cargar Turno", "🏦 Depósito", "🐷 Ahorro", "📅 Cierre", "🗂 Resumen"
 ])
 
 # ---------------------------------------------------
@@ -214,7 +214,7 @@ with tab_tablero:
     ajustes = db.obtener_ajustes(usuario_id)
     ahorros = db.obtener_ahorros(usuario_id)
 
-    with st.expander("⚙️️ Configurar saldo inicial"):
+    with st.expander("⚙ Configurar saldo inicial"):
         with st.form("form_saldo_inicial"):
             fecha_inicio = st.date_input("Fecha de arranque", value=saldo["fecha_inicio"] if saldo else datetime.date.today())
             col_si1, col_si2 = st.columns(2)
@@ -302,7 +302,7 @@ with tab_tablero:
 # RESUMEN MENSUAL Y DESGLOSE
 # ---------------------------------------------------
 with tab_resumen:
-    st.header("📊 Resumen Mensual y Desglose por Categoría VAMOOO")
+    st.header("📊 Resumen Mensual Integrado")
     
     gastos_r = db.obtener_gastos(usuario_id)
     turnos_r = db.obtener_turnos(usuario_id)
@@ -319,79 +319,19 @@ with tab_resumen:
     ), reverse=True)
 
     if meses:
-        # Selector de mes (por defecto el más reciente)
         mes_seleccionado = st.selectbox("📅 Seleccioná el mes a auditar", meses)
         
         # Filtrar solo los datos del mes elegido
         g_m = gastos_r[gastos_r["fecha"].dt.to_period("M").astype(str) == mes_seleccionado] if not gastos_r.empty else pd.DataFrame()
         t_m = turnos_r[turnos_r["fecha"].dt.to_period("M").astype(str) == mes_seleccionado] if not turnos_r.empty else pd.DataFrame()
 
-        # ===================================================
-        # 1. GASTOS PERSONALES Y FAMILIARES (POR CATEGORÍA)
-        # ===================================================
-        st.subheader("🛒 Gastos Personales y Familiares")
+        # --- PREPARAR TODOS LOS CÁLCULOS PRIMERO ---
+        # 1. Ingresos (Recaudación)
+        recaudacion_mes = t_m["recaudacion_total"].sum() if not t_m.empty and "recaudacion_total" in t_m.columns else (
+            (t_m["efectivo_calle"] + t_m["transferencia_calle"] + t_m["uber_transferido"] + t_m["uber_efectivo"] + t_m["cabify_transferido"] + t_m["cabify_efectivo"]).sum() if not t_m.empty else 0
+        )
         
-        g_pers = g_m[g_m["tipo"] == "personal"] if not g_m.empty else pd.DataFrame()
-        
-        if not g_pers.empty:
-            # Identificar dinámicamente la columna de categoría
-            col_cat = "categoria_nombre" if "categoria_nombre" in g_pers.columns else "categoria"
-
-            # Total acumulado personal del mes
-            total_personal_mes = g_pers["monto"].sum()
-            st.metric("Total Gastado en Vida Personal / Familiar", formato_pesos(total_personal_mes))
-
-            # --- Tabla Resumen por Categoría (Ordenada de mayor a menor) ---
-            resumen_cat = g_pers.groupby(col_cat)["monto"].agg(["sum", "count"]).reset_index()
-            resumen_cat.columns = ["Categoría", "Total Gastado", "Cant. Comprobantes"]
-            resumen_cat = resumen_cat.sort_values(by="Total Gastado", ascending=False)
-            
-            # Formatear el total en pesos para visualización limpia
-            resumen_cat_mostrar = resumen_cat.copy()
-            resumen_cat_mostrar["Total Gastado"] = resumen_cat_mostrar["Total Gastado"].apply(formato_pesos)
-
-            st.markdown("**Totales por rubro este mes:**")
-            st.dataframe(resumen_cat_mostrar, use_container_width=True, hide_index=True)
-
-            # --- Desplegables con el Detalle y Descripciones por Categoría ---
-            st.markdown("### 🔍 Detalle ítem por ítem")
-            st.caption("Apretá en cada categoría para ver las descripciones y montos cargados:")
-
-            for _, row in resumen_cat.iterrows():
-                cat_nombre = row["Categoría"]
-                cat_total = row["Total Gastado"]
-                cat_cant = row["Cant. Comprobantes"]
-
-                # Expander individual para cada categoría cargada
-                with st.expander(f"📌 **{cat_nombre}** — Total: {formato_pesos(cat_total)} ({cat_cant} registros)"):
-                    gastos_cat = g_pers[g_pers[col_cat] == cat_nombre].sort_values(by="fecha", ascending=False).copy()
-                    gastos_cat["Fecha"] = gastos_cat["fecha"].dt.strftime("%d/%m/%Y")
-                    gastos_cat["Monto"] = gastos_cat["monto"].apply(formato_pesos)
-                    
-                    # Asegurar que existan las columnas de descripción y método de pago
-                    if "descripcion" not in gastos_cat.columns:
-                        gastos_cat["descripcion"] = "-"
-                    if "metodo_pago" not in gastos_cat.columns:
-                        gastos_cat["metodo_pago"] = "-"
-
-                    gastos_cat["Descripción"] = gastos_cat["descripcion"].replace("", "-").fillna("-")
-                    gastos_cat["Pago"] = gastos_cat["metodo_pago"]
-
-                    # Mostrar tabla limpia con las descripciones escritas
-                    cols_visibles = ["Fecha", "Descripción", "Monto", "Pago"]
-                    st.dataframe(gastos_cat[cols_visibles], use_container_width=True, hide_index=True)
-
-        else:
-            st.info("No hay gastos personales registrados en el mes seleccionado.")
-            total_personal_mes = 0
-
-        st.divider()
-
-        # ===================================================
-        # 2. GASTOS OPERATIVOS DEL AUTO / TAXI
-        # ===================================================
-        st.subheader("⛽ Gastos Operativos del Taxi")
-        
+        # 2. Egresos Operativos
         gnc_m = t_m["gasto_gnc"].sum() if not t_m.empty else 0
         nafta_m = t_m["gasto_nafta"].sum() if not t_m.empty else 0
         comida_m = t_m["gasto_comida_laboral"].sum() if not t_m.empty else 0
@@ -403,6 +343,47 @@ with tab_resumen:
 
         total_operativo_mes = gnc_m + nafta_m + comida_m + ub_c + cb_c + op_extras
 
+        # 3. Egresos Personales
+        g_pers = g_m[g_m["tipo"] == "personal"] if not g_m.empty else pd.DataFrame()
+        total_personal_mes = g_pers["monto"].sum() if not g_pers.empty else 0
+
+        # Totales Finales
+        total_egresos = total_operativo_mes + total_personal_mes
+        resultado_neto = recaudacion_mes - total_egresos
+
+        # ===================================================
+        # SECCIÓN 1: BALANCE GENERAL (LO PRIMERO QUE SE VE)
+        # ===================================================
+        st.subheader("⚖️ Balance General del Mes")
+        col_b1, col_b2, col_b3 = st.columns(3)
+        col_b1.metric("Ingreso (Recaudación Bruta)", formato_pesos(recaudacion_mes))
+        col_b2.metric("Egreso (Total Gastos)", formato_pesos(total_egresos))
+        col_b3.metric("Resultado Neto Disponible", formato_pesos(resultado_neto), delta=formato_pesos(resultado_neto))
+
+        # Novedad: Desglose de ingresos diarios
+        with st.expander("📅 Ver facturación día por día"):
+            if not t_m.empty:
+                turnos_diarios = t_m.sort_values(by="fecha", ascending=False).copy()
+                turnos_diarios["Fecha"] = turnos_diarios["fecha"].dt.strftime("%d/%m/%Y")
+                
+                # Rescate seguro de la columna de recaudación
+                if "recaudacion_total" in turnos_diarios.columns:
+                    turnos_diarios["Recaudación"] = turnos_diarios["recaudacion_total"].apply(formato_pesos)
+                else:
+                    turnos_diarios["Recaudación"] = (turnos_diarios["efectivo_calle"] + turnos_diarios["transferencia_calle"] + turnos_diarios["uber_transferido"] + turnos_diarios["uber_efectivo"] + turnos_diarios["cabify_transferido"] + turnos_diarios["cabify_efectivo"]).apply(formato_pesos)
+                
+                turnos_diarios["KM Totales"] = turnos_diarios["km_recorridos"]
+                
+                st.dataframe(turnos_diarios[["Fecha", "Recaudación", "KM Totales"]], use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay turnos cargados en este mes.")
+
+        st.divider()
+
+        # ===================================================
+        # SECCIÓN 2: GASTOS OPERATIVOS DEL AUTO / TAXI
+        # ===================================================
+        st.subheader("⛽ Gastos Operativos del Taxi")
         st.metric("Total Gastos Operativos", formato_pesos(total_operativo_mes))
 
         with st.expander("🔍 Desglose operativo (GNC, Nafta, Comisiones, Taller)"):
@@ -419,27 +400,59 @@ with tab_resumen:
                 st.markdown("**Otros gastos del auto/taller registrados:**")
                 col_cat_op = "categoria_nombre" if "categoria_nombre" in g_op.columns else "categoria"
                 res_op = g_op.groupby(col_cat_op)["monto"].sum().reset_index()
-                res_op["monto"] = res_op["monto"].apply(formato_pesos)
+                res_op.columns = ["Categoría", "Monto"]
+                res_op["Monto"] = res_op["Monto"].apply(formato_pesos)
                 st.dataframe(res_op, use_container_width=True, hide_index=True)
 
         st.divider()
 
         # ===================================================
-        # 3. BALANCE FINAL Y RESULTADO DEL MES
+        # SECCIÓN 3: GASTOS PERSONALES Y FAMILIARES
         # ===================================================
-        st.subheader("📈 Resultado Financiero Neto")
+        st.subheader("🛒 Gastos Personales y Familiares")
+        st.metric("Total Gastado en Vida Personal", formato_pesos(total_personal_mes))
         
-        recaudacion_mes = t_m["recaudacion_total"].sum() if not t_m.empty and "recaudacion_total" in t_m.columns else (
-            (t_m["efectivo_calle"] + t_m["transferencia_calle"] + t_m["uber_transferido"] + t_m["uber_efectivo"] + t_m["cabify_transferido"] + t_m["cabify_efectivo"]).sum() if not t_m.empty else 0
-        )
-        
-        total_egresos = total_operativo_mes + (total_personal_mes if not g_pers.empty else 0)
-        resultado_neto = recaudacion_mes - total_egresos
+        if not g_pers.empty:
+            col_cat = "categoria_nombre" if "categoria_nombre" in g_pers.columns else "categoria"
 
-        col_b1, col_b2, col_b3 = st.columns(3)
-        col_b1.metric("Recaudación Bruta", formato_pesos(recaudacion_mes))
-        col_b2.metric("Total Egresos (Auto + Vida)", formato_pesos(total_egresos))
-        col_b3.metric("Resultado Neto Disponible", formato_pesos(resultado_neto))
+            # Tabla Resumen por Categoría
+            resumen_cat = g_pers.groupby(col_cat)["monto"].agg(["sum", "count"]).reset_index()
+            resumen_cat.columns = ["Categoría", "Total Gastado", "Cant. Comprobantes"]
+            resumen_cat = resumen_cat.sort_values(by="Total Gastado", ascending=False)
+            
+            resumen_cat_mostrar = resumen_cat.copy()
+            resumen_cat_mostrar["Total Gastado"] = resumen_cat_mostrar["Total Gastado"].apply(formato_pesos)
+
+            st.markdown("**Totales por rubro este mes:**")
+            st.dataframe(resumen_cat_mostrar, use_container_width=True, hide_index=True)
+
+            st.markdown("### 🔍 Detalle ítem por ítem")
+            st.caption("Apretá en cada categoría para ver las descripciones y montos cargados:")
+
+            # Desplegables con Detalle
+            for _, row in resumen_cat.iterrows():
+                cat_nombre = row["Categoría"]
+                cat_total = row["Total Gastado"]
+                cat_cant = row["Cant. Comprobantes"]
+
+                with st.expander(f"📌 **{cat_nombre}** — Total: {formato_pesos(cat_total)} ({cat_cant} registros)"):
+                    gastos_cat = g_pers[g_pers[col_cat] == cat_nombre].sort_values(by="fecha", ascending=False).copy()
+                    gastos_cat["Fecha"] = gastos_cat["fecha"].dt.strftime("%d/%m/%Y")
+                    gastos_cat["Monto"] = gastos_cat["monto"].apply(formato_pesos)
+                    
+                    if "descripcion" not in gastos_cat.columns:
+                        gastos_cat["descripcion"] = "-"
+                    if "metodo_pago" not in gastos_cat.columns:
+                        gastos_cat["metodo_pago"] = "-"
+
+                    gastos_cat["Descripción"] = gastos_cat["descripcion"].replace("", "-").fillna("-")
+                    gastos_cat["Pago"] = gastos_cat["metodo_pago"]
+
+                    cols_visibles = ["Fecha", "Descripción", "Monto", "Pago"]
+                    st.dataframe(gastos_cat[cols_visibles], use_container_width=True, hide_index=True)
+
+        else:
+            st.info("No hay gastos personales registrados en el mes seleccionado.")
 
     else:
         st.info("Aún no hay turnos ni gastos registrados en el sistema.")
